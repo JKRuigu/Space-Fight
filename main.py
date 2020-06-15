@@ -3,6 +3,8 @@ import os
 import time
 import random
 import math
+import neat
+
 pygame.font.init()
 
 WIDTH, HEIGHT = 800, 600
@@ -35,6 +37,9 @@ maxX,minX = 710,-10
 bullet_state = "ready"
 
 def main():
+	nets = []
+	ge = []
+
 	pygame.init()
 	score = 0
 
@@ -196,4 +201,31 @@ def main_menu():
     pygame.quit()
 
 
-main_menu()
+# main_menu()
+def run(config_file):
+    """
+    runs the NEAT algorithm to train a neural network to play flappy bird.
+    :param config_file: location of config file
+    :return: None
+    """
+    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         config_file)
+
+    p = neat.Population(config)
+
+    p.add_reporter(neat.StdOutReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+
+    winner = p.run(main_menu, 50)
+
+    # # show final stats
+    # print('\nBest genome:\n{!s}'.format(winner))
+
+
+if __name__ == '__main__':
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, 'config-feedforward.txt')
+    # run(config_path)
+    main_menu()
