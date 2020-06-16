@@ -11,6 +11,7 @@ WIDTH, HEIGHT = 800, 600
 font = pygame.font.Font('freesansbold.ttf',40)
 over_font = pygame.font.Font('freesansbold.ttf',90)
 score = 0
+GEN =0
 
 # Load images
 RED_SPACE_SHIP = pygame.image.load(os.path.join("assets", "pixel_ship_red_small.png"))
@@ -46,11 +47,11 @@ class Player():
 		win.blit(self.img,(self.x,self.y))
 
 	def move(self,ch):
-		self.x += (self.change*ch)
-		if self.x <= -10:
-			self.x = -10
-		elif self.x >= 710:
-			self.x = 710
+		self.x += (ch*self.player_speed)
+		# if self.x <= -10:
+		# 	self.x = -10
+		# elif self.x >= 710:
+		# 	self.x = 710
 	def get_mask(self):
 		return pygame.mask.from_surface(self.img)
 
@@ -73,73 +74,122 @@ class Enemy():
 		bird_mask = player.get_mask()
 		bottom_mask = pygame.mask.from_surface(self.img)
 		bottom_offset = (self.x - player.x, self.y - round(player.y))
-
 		b_point = bird_mask.overlap(bottom_mask, bottom_offset)
-
+		# distance = math.sqrt((math.pow(player.x - self.x,2))+(math.pow(player.y - self.y,2)))
 		if b_point:
 			return True
 
 		return False
 
-def draw_win(win,player,enemies,score):
+def draw_win(win,players,enemies,score,gen):
 	win.blit(BG, (0,0))
 	score_label = font.render("Score: " + str(score),1,(255,255,255))
 	win.blit(score_label, (WIDTH - score_label.get_width() - 15, 10))
-	player.draw(win)
+
+	gen = font.render("Gen: " + str(gen),1,(255,255,255))
+	win.blit(gen, (10, 10))
+
+	# alive
+	players_pop = font.render("Alive: " + str(len(players)),1,(255,255,255))
+	win.blit(players_pop, (10, 50))
+
+	for player in players:
+		player.draw(win)
+
 	for enemy in enemies:
 		enemy.draw(win)
 	pygame.display.update()
 
-def main():
-	player = Player(370,480)
-	enemies = [Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50))]
-	run = True
-	win = pygame.display.set_mode((WIDTH,HEIGHT))
+def main(genomes,config):	
+	global GEN
+	GEN += 1
+	enemies = [Enemy(random.randint(-10,710),random.randint(0,50))]
+	nets  =[] 
+	ge = []
+	players =[]
 	clock = pygame.time.Clock()
 	score = 0
+	
+	for g_id,g in genomes:
+		g.fitness = 0
+		net = neat.nn.FeedForwardNetwork.create(g, config)
+		nets.append(net)
+		players.append(Player(370,480))
+		ge.append(g)
+
+	win = pygame.display.set_mode((WIDTH,HEIGHT))
+	run = True
 	while run:
-		# clock.tick(30)
+		clock.tick(30)
 		for event in pygame.event.get():
 			if event.type == pygame.QUIT:
 				run = False
 				pygame.quit()
 				quit()
+
+		for x,player in enumerate(players):
+			ge[x].fitness +=0.1
+			if len(enemies) >0:
+				for enemy in enemies:
+					output = nets[players.index(player)].activate((player.x, abs(player.y - enemy.y), abs(player.x - enemy.x)))
+					num = int(output[0])
+					if num == -1 or num == 1:
+						player.move(num)
+
 		add_enemy = False
 		rem = []
 		for enemy in enemies:
-			if enemy.collide(player,win):
-				pass
-			if enemy.y >= 500:
-				print("collide")
-				score+=1
-				rem.append(enemy)
-				add_enemy = True
 			enemy.move()
-		if add_enemy:
+			for player in players:
+				if enemy.collide(player,win):
+					ge[players.index(player)].fitness -=1
+					nets.pop(players.index(player))
+					ge.pop(players.index(player))
+					players.pop(players.index(player))
+
+			if enemy.y >= 600:
+				rem.append(enemy)
+
+			if enemy.y >= 400:
+					add_enemy = True
+
+		if add_enemy and len(enemies) <5:
+			score+=1
+			for g in ge:
+				g.fitness += 1
 			enemies.append(Enemy(random.randint(-10,710),random.randint(0,50)))	
+		add_enemy = False
+			
 		for r in rem:
-			enemies.remove(r)		
-		draw_win(win,player,enemies,score)
+			enemies.remove(r)
 
-main()
-# def run(config_file):
-#     config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-#                          neat.DefaultSpeciesSet, neat.DefaultStagnation,
-#                          config_file)
+		for player in players:
+			if player.x <= -5 or player.x>= 800:
+				nets.pop(players.index(player))
+				ge.pop(players.index(player))
+				players.pop(players.index(player))
+		if len(players) <= 0:
+			break		
+		draw_win(win,players,enemies,score,GEN)
 
-#     p = neat.Population(config)
+def run(config_file):
+	config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+						 neat.DefaultSpeciesSet, neat.DefaultStagnation,
+						 config_file)
 
-#     p.add_reporter(neat.StdOutReporter(True))
-#     stats = neat.StatisticsReporter()
-#     p.add_reporter(stats)
+	p = neat.Population(config)
 
-#     winner = p.run(main_menu, 50)
+	p.add_reporter(neat.StdOutReporter(True))
+	stats = neat.StatisticsReporter()
+	p.add_reporter(stats)
 
-#     # # show final stats
-#     # print('\nBest genome:\n{!s}'.format(winner))
+	winner = p.run(main, 50)
+
+	# # show final stats
+	# print('\nBest genome:\n{!s}'.format(winner))
 
 
-# if __name__ == '__main__':
-#     local_dir = os.path.dirname(__file__)
-#     config_path = os.path.join(local_dir, 'config-feedforward.txt')
-#     run(config_path)
+if __name__ == '__main__':
+	local_dir = os.path.dirname(__file__)
+	config_path = os.path.join(local_dir, 'config-feedforward.txt')
+	run(config_path)
