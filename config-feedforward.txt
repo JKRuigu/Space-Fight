@@ -1,8 +1,8 @@
 [NEAT]
 fitness_criterion     = max
-fitness_threshold     = 300
-pop_size              = 100
-reset_on_extinction   = True
+fitness_threshold     = 200
+pop_size              = 300
+reset_on_extinction   = False
 
 [DefaultGenome]
 # node activation options
@@ -12,7 +12,7 @@ activation_options      = tanh
 
 # node aggregation options
 aggregation_default     = sum
-aggregation_mutate_rate = 0.0
+aggregation_mutate_rate = 10.0
 aggregation_options     = sum
 
 # node bias options
