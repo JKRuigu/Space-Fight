@@ -2,15 +2,11 @@ import pygame
 import os
 import time
 import random
-import math
-import neat
-
 pygame.font.init()
 
-WIDTH, HEIGHT = 800, 600
-font = pygame.font.Font('freesansbold.ttf',32)
-over_font = pygame.font.Font('freesansbold.ttf',90)
-score = 0
+WIDTH, HEIGHT = 750, 750
+WIN = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Space Shooter Tutorial")
 
 # Load images
 RED_SPACE_SHIP = pygame.image.load(os.path.join("assets", "pixel_ship_red_small.png"))
@@ -29,203 +25,238 @@ YELLOW_LASER = pygame.image.load(os.path.join("assets", "pixel_laser_yellow.png"
 # Background
 BG = pygame.transform.scale(pygame.image.load(os.path.join("assets", "background-black.png")), (WIDTH, HEIGHT))
 
+class Laser:
+    def __init__(self, x, y, img):
+        self.x = x
+        self.y = y
+        self.img = img
+        self.mask = pygame.mask.from_surface(self.img)
 
-# create screen
-screen = pygame.display.set_mode((WIDTH,HEIGHT))
-maxX,minX = 710,-10
-# bullet_state
-bullet_state = "ready"
+    def draw(self, window):
+        window.blit(self.img, (self.x, self.y))
+
+    def move(self, vel):
+        self.y += vel
+
+    def off_screen(self, height):
+        return not(self.y <= height and self.y >= 0)
+
+    def collision(self, obj):
+        return collide(self, obj)
+
+
+class Ship:
+    COOLDOWN = 30
+
+    def __init__(self, x, y, health=100):
+        self.x = x
+        self.y = y
+        self.health = health
+        self.ship_img = None
+        self.laser_img = None
+        self.lasers = []
+        self.cool_down_counter = 0
+
+    def draw(self, window):
+        window.blit(self.ship_img, (self.x, self.y))
+        for laser in self.lasers:
+            laser.draw(window)
+
+    def move_lasers(self, vel, obj):
+        self.cooldown()
+        for laser in self.lasers:
+            laser.move(vel)
+            if laser.off_screen(HEIGHT):
+                self.lasers.remove(laser)
+            elif laser.collision(obj):
+                obj.health -= 10
+                self.lasers.remove(laser)
+
+    def cooldown(self):
+        if self.cool_down_counter >= self.COOLDOWN:
+            self.cool_down_counter = 0
+        elif self.cool_down_counter > 0:
+            self.cool_down_counter += 1
+
+    def shoot(self):
+        if self.cool_down_counter == 0:
+            laser = Laser(self.x, self.y, self.laser_img)
+            self.lasers.append(laser)
+            self.cool_down_counter = 1
+
+    def get_width(self):
+        return self.ship_img.get_width()
+
+    def get_height(self):
+        return self.ship_img.get_height()
+
+
+class Player(Ship):
+    def __init__(self, x, y, health=100):
+        super().__init__(x, y, health)
+        self.ship_img = YELLOW_SPACE_SHIP
+        self.laser_img = YELLOW_LASER
+        self.mask = pygame.mask.from_surface(self.ship_img)
+        self.max_health = health
+
+    def move_lasers(self, vel, objs):
+        self.cooldown()
+        for laser in self.lasers:
+            laser.move(vel)
+            if laser.off_screen(HEIGHT):
+                self.lasers.remove(laser)
+            else:
+                for obj in objs:
+                    if laser.collision(obj):
+                        objs.remove(obj)
+                        if laser in self.lasers:
+                            self.lasers.remove(laser)
+
+    def draw(self, window):
+        super().draw(window)
+        self.healthbar(window)
+
+    def healthbar(self, window):
+        pygame.draw.rect(window, (255,0,0), (self.x, self.y + self.ship_img.get_height() + 10, self.ship_img.get_width(), 10))
+        pygame.draw.rect(window, (0,255,0), (self.x, self.y + self.ship_img.get_height() + 10, self.ship_img.get_width() * (self.health/self.max_health), 10))
+
+
+class Enemy(Ship):
+    COLOR_MAP = {
+                "red": (RED_SPACE_SHIP, RED_LASER),
+                "green": (GREEN_SPACE_SHIP, GREEN_LASER),
+                "blue": (BLUE_SPACE_SHIP, BLUE_LASER)
+                }
+
+    def __init__(self, x, y, color, health=100):
+        super().__init__(x, y, health)
+        self.ship_img, self.laser_img = self.COLOR_MAP[color]
+        self.mask = pygame.mask.from_surface(self.ship_img)
+
+    def move(self, vel):
+        self.y += vel
+
+    def shoot(self):
+        if self.cool_down_counter == 0:
+            laser = Laser(self.x-20, self.y, self.laser_img)
+            self.lasers.append(laser)
+            self.cool_down_counter = 1
+
+
+def collide(obj1, obj2):
+    offset_x = obj2.x - obj1.x
+    offset_y = obj2.y - obj1.y
+    return obj1.mask.overlap(obj2.mask, (offset_x, offset_y)) != None
 
 def main():
-	nets = []
-	ge = []
+    run = True
+    FPS = 60
+    level = 0
+    lives = 5
+    main_font = pygame.font.SysFont("comicsans", 50)
+    lost_font = pygame.font.SysFont("comicsans", 60)
 
-	pygame.init()
-	score = 0
+    enemies = []
+    wave_length = 5
+    enemy_vel = 1
 
-	# screen title
-	pygame.display.set_caption("Space Fight")
-	textX =10
-	textY =10
+    player_vel = 5
+    laser_vel = 5
 
-	# display score
-	def show_score(x,y):
-		text = font.render("Score: "+str(score),True,(255,255,255))
-		screen.blit(text,(x,y))
+    player = Player(300, 630)
 
-	# display game over
-	def game_over_text():
-		over_text = font.render("GAME OVER",True,(255,255,255))
-		screen.blit(over_text,(250,250))
-	# Player
-	playerX,playerY = 370,480
-	player_change = 0
-	player_speed = 5
+    clock = pygame.time.Clock()
 
-	def player(x,y):
-		screen.blit(YELLOW_SPACE_SHIP,(x,y))
+    lost = False
+    lost_count = 0
 
-	# Enemy
-	enemyImg = []
-	enemyX = []
-	enemyY = []
-	enemyX_change = []
-	enemyY_change = []
-	speed = []
-	number_of_enemies = 5
-	for i in range(number_of_enemies):
-		enemyImg.append(RED_SPACE_SHIP)
-		enemyX.append(random.randint(-10,710))
-		enemyY.append(random.randint(50,150))
-		enemyX_change.append(1)
-		enemyY_change.append(40)
-		speed.append(1)
+    def redraw_window():
+        WIN.blit(BG, (0,0))
+        # draw text
+        lives_label = main_font.render(f"Lives: {lives}", 1, (255,255,255))
+        level_label = main_font.render(f"Level: {level}", 1, (255,255,255))
 
-	def enemy(x,y,i):
-		screen.blit(enemyImg[i],(x,y))
+        WIN.blit(lives_label, (10, 10))
+        WIN.blit(level_label, (WIDTH - level_label.get_width() - 10, 10))
 
-	# BULLET
-	bulletX = 0
-	bulletY = 480
-	bulletX_change = 0
-	bulletY_change = 10
-	bullet_state = "ready"
+        for enemy in enemies:
+            enemy.draw(WIN)
 
-	def fire_bullet(x,y):
-		bulletX = x
-		screen.blit(RED_LASER,(x,y-50))
+        player.draw(WIN)
 
-	# collition
-	def isCollision(enemyX,enemyY,bulletX,bulletY):
-		distance = math.sqrt((math.pow(enemyX - bulletX,2))+(math.pow(enemyY - bulletY,2)))
+        if lost:
+            lost_label = lost_font.render("You Lost!!", 1, (255,255,255))
+            WIN.blit(lost_label, (WIDTH/2 - lost_label.get_width()/2, 350))
 
-		if distance <27:
-			return True
-		else:
-			return False
+        pygame.display.update()
 
-	# game loop
-	running = True
-	# def run():
-	while running:
-		screen.fill((0,0,0))		
-		screen.blit(BG,(0,0))
-		for event in pygame.event.get():
-			if event.type == pygame.QUIT:
-				running = False
-				pygame.quit()
-				quit()
+    while run:
+        clock.tick(FPS)
+        redraw_window()
 
-			if event.type == pygame.KEYDOWN:	
-				if event.key == pygame.K_LEFT:
-					player_change = -player_speed
-				if event.key == pygame.K_RIGHT:
-					player_change = player_speed
-				if event.key == pygame.K_SPACE:
-					if bullet_state == "ready":
-						bulletX = playerX
-						bullet_state = "fire"
-						fire_bullet(playerX,bulletY)
+        if lives <= 0 or player.health <= 0:
+            lost = True
+            lost_count += 1
 
-			if event.type == pygame.KEYUP:
-				if event.key == pygame.K_LEFT or	event.key == pygame.K_RIGHT:
-					player_change = 0
+        if lost:
+            if lost_count > FPS * 3:
+                run = False
+            else:
+                continue
 
-		
-		playerX += player_change
+        if len(enemies) == 0:
+            level += 1
+            wave_length += 5
+            for i in range(wave_length):
+                enemy = Enemy(random.randrange(50, WIDTH-100), random.randrange(-1500, -100), random.choice(["red", "blue", "green"]))
+                enemies.append(enemy)
 
-		# PLAYER MOVEMENT
-		if playerX <= minX:
-			playerX = minX
-		elif playerX >= maxX:
-			playerX = maxX
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                quit()
 
-			# BULLET MOVEMENT
-		if bullet_state == "fire":
-			fire_bullet(bulletX,bulletY)
-			bulletY -=bulletY_change
-				
-		if bulletY <= 0:
-			print("ready")
-			bulletY = playerY
-			bullet_state = "ready"
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] and player.x - player_vel > 0: # left
+            player.x -= player_vel
+        if keys[pygame.K_RIGHT] and player.x + player_vel + player.get_width() < WIDTH: # right
+            player.x += player_vel
+        if keys[pygame.K_UP] and player.y - player_vel > 0: # up
+            player.y -= player_vel
+        if keys[pygame.K_DOWN] and player.y + player_vel + player.get_height() + 15 < HEIGHT: # down
+            player.y += player_vel
+        if keys[pygame.K_SPACE]:
+            player.shoot()
 
-		# ENEMIES MOVEMENT
-		for i in range(number_of_enemies):
-			if enemyY[i] > 440:
-				for j in range(number_of_enemies):
-					enemyY[j] = 2000
-				game_over_text()
-				break
+        for enemy in enemies[:]:
+            enemy.move(enemy_vel)
+            enemy.move_lasers(laser_vel, player)
 
-			enemyX[i] +=enemyX_change[i] # this comes after the if statement to have a smooth downwards transition
-			if enemyX[i] <= minX:
-				enemyX_change[i] = 1
-				enemyY[i] +=enemyY_change[i]
-			elif enemyX[i] >= 740:
-				enemyX_change[i] =-1
-				enemyY[i] +=enemyY_change[i]
+            if random.randrange(0, 2*60) == 1:
+                enemy.shoot()
 
+            if collide(enemy, player):
+                player.health -= 10
+                enemies.remove(enemy)
+            elif enemy.y + enemy.get_height() > HEIGHT:
+                lives -= 1
+                enemies.remove(enemy)
 
-			collition = isCollision(enemyX[i],enemyY[i],bulletX,bulletY)
-			if collition:
-				bulletY =playerY
-				print("collition")
-				bullet_state = "ready"
-				score +=1
-				enemyX[i],enemyY[i] = random.randint(0,710),random.randint(50,150)
-			
-			# dis = math.sqrt((math.pow(enemyX[i] - bulletX[i],2))+(math.pow(enemyY[i] - bulletY[i],2)))
-
-			enemy(enemyX[i],enemyY[i],i)		
-
-		player(playerX,playerY)
-		show_score(textX,textY)
-		pygame.display.update()
-
+        player.move_lasers(-laser_vel, enemies)
 
 def main_menu():
-    title_font = pygame.font.Font('freesansbold.ttf',50)
+    title_font = pygame.font.SysFont("comicsans", 70)
     run = True
     while run:
-        screen.blit(BG, (0,0))
+        WIN.blit(BG, (0,0))
         title_label = title_font.render("Press the mouse to begin...", 1, (255,255,255))
-        screen.blit(title_label, (WIDTH/2 - title_label.get_width()/2, 350))
+        WIN.blit(title_label, (WIDTH/2 - title_label.get_width()/2, 350))
         pygame.display.update()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
             if event.type == pygame.MOUSEBUTTONDOWN:
                 main()
-                pass
     pygame.quit()
 
 
-# main_menu()
-def run(config_file):
-    """
-    runs the NEAT algorithm to train a neural network to play flappy bird.
-    :param config_file: location of config file
-    :return: None
-    """
-    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         config_file)
-
-    p = neat.Population(config)
-
-    p.add_reporter(neat.StdOutReporter(True))
-    stats = neat.StatisticsReporter()
-    p.add_reporter(stats)
-
-    winner = p.run(main_menu, 50)
-
-    # # show final stats
-    # print('\nBest genome:\n{!s}'.format(winner))
-
-
-if __name__ == '__main__':
-    local_dir = os.path.dirname(__file__)
-    config_path = os.path.join(local_dir, 'config-feedforward.txt')
-    # run(config_path)
-    main_menu()
+main_menu()
