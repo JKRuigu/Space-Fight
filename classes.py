@@ -43,6 +43,7 @@ class Player():
 		self.y = y
 		self.change = 5
 		self.img = YELLOW_SPACE_SHIP
+		self.mask = pygame.mask.from_surface(self.img)
 
 	def draw(self,win):
 		win.blit(self.img,(self.x,self.y))
@@ -64,6 +65,7 @@ class Enemy():
 		self.y = y
 		self.change = 5
 		self.img = RED_SPACE_SHIP
+		self.mask = pygame.mask.from_surface(self.img)
 
 	def draw(self,win):
 		win.blit(self.img,(self.x,self.y))
@@ -81,130 +83,83 @@ class Enemy():
 			return True
 
 		return False
+	def shoot(self):
+		if self.cool_down_counter == 0:
+			laser = Laser(self.x-20, self.y, self.img)
+			self.lasers.append(laser)
+			self.cool_down_counter = 1
 
-def draw_win(win,players,enemies,score,gen):
+class Laser:
+	def __init__(self, x, y, img):
+		self.x = x
+		self.y = y
+		self.img = img
+		self.mask = pygame.mask.from_surface(self.img)
+
+	def draw(self, window):
+		window.blit(self.img, (self.x, self.y))
+
+	def move(self, vel):
+		self.y += vel
+
+	def off_screen(self, height):
+		return not(self.y <= height and self.y >= 0)
+
+	def collision(self, obj):
+		return collide(self, obj)
+
+def collide(obj1, obj2):
+	offset_x = obj2.x - obj1.x
+	offset_y = obj2.y - obj1.y
+	return obj1.mask.overlap(obj2.mask, (offset_x, offset_y)) != None
+
+def draw_win(win,player,enemies,score,lasers):
 	win.blit(BG, (0,0))
 	score_label = font.render("Score: " + str(score),1,(255,255,255))
 	win.blit(score_label, (WIDTH - score_label.get_width() - 15, 10))
 
-	gen = font.render("Gen: " + str(gen),1,(255,255,255))
-	win.blit(gen, (10, 10))
-
-	# alive
-	players_pop = font.render("Alive: " + str(len(players)),1,(255,255,255))
-	win.blit(players_pop, (10, 50))
-
-	for player in players:
-		player.draw(win)
+	player.draw(win)
+	for laser in lasers:
+		laser.draw(win)
+		laser.move(-5)
 
 	for enemy in enemies:
 		enemy.draw(win)
 	pygame.display.update()
 
-def main(genomes,config):	
-	global GEN
-	GEN += 1
-	enemies = [Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50))]
-	nets  =[] 
-	ge = []
-	players =[]
+def main():	
+	enemies = [Enemy(370,100)]
 	clock = pygame.time.Clock()
 	score = 0
+	player = Player(370,480)
+	lasers = [Laser(370,400,YELLOW_LASER)]
 	
-	for g_id,g in genomes:
-		g.fitness = 0
-		net = neat.nn.FeedForwardNetwork.create(g, config)
-		nets.append(net)
-		players.append(Player(370,480))
-		ge.append(g)
-
 	win = pygame.display.set_mode((WIDTH,HEIGHT))
 	run = True
 	while run:
 		clock.tick(30)
+		rem = []
+		remLaser = []
 		for event in pygame.event.get():
 			if event.type == pygame.QUIT:
 				run = False
 				pygame.quit()
 				quit()
-
-		for x,player in enumerate(players):
-			ge[x].fitness +=0.1
-			if player.x >= 0 or player.x <= 800:
-				ge[x].fitness +=0.01
-			elif player.x >= 0 or player.x >= 800:
-				ge[x].fitness -=0.5
-			if len(enemies) >0:
-				for enemy in enemies:
-					if abs(player.y - enemy.y) > 100:
-						ge[x].fitness += 1.5
-					output = nets[players.index(player)].activate((player.x, abs(player.y - enemy.y), abs(player.x - enemy.x)))
-					num = int(output[0])
-					if num == -1 or num == 1:
-						player.move(num)
-						ge[x].fitness +=.002
-
-		add_enemy = False
-		rem = []
 		for enemy in enemies:
-			enemy.move()
-			for player in players:
-				if enemy.collide(player,win):
-					ge[players.index(player)].fitness -=5
-					ge[players.index(player)].fitness -=1
-					nets.pop(players.index(player))
-					ge.pop(players.index(player))
-					players.pop(players.index(player))
+			# enemy.move()
+			for laser in lasers:
+				if laser.collision(enemy) == True:
+					rem.append(enemy)
+					remLaser.append(laser)
+					enemies.append(Enemy(370,50))
 
-			if enemy.y >= 600:
-				rem.append(enemy)
-
-			if enemy.y >= 400:
-					add_enemy = True
-
-		if add_enemy and len(enemies) <3:
-			score+=1
-			for g in ge:
-				g.fitness += 2
-			enemies.append(Enemy(random.randint(-10,710),random.randint(0,50)))	
-		add_enemy = False
-			
 		for r in rem:
 			enemies.remove(r)
 
-		for player in players:
-			if player.x <= -5 or player.x>= 800:
-				nets.pop(players.index(player))
-				ge.pop(players.index(player))
-				players.pop(players.index(player))
-		if len(players) <= 0:
-			for g in ge:
-				players.append(Player(370,480))
-		if score > 150 or len(players) <= 0:
-			break
-		draw_win(win,players,enemies,score,GEN)
-
-def run(config_file):
-	config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-						 neat.DefaultSpeciesSet, neat.DefaultStagnation,
-						 config_file)
-
-	p = neat.Population(config)
-
-	p.add_reporter(neat.StdOutReporter(True))
-	stats = neat.StatisticsReporter()
-	p.add_reporter(stats)
-
-	winner = p.run(main, 50)
-
-	with open('model_pickel','wb') as f:
-		pickle.dump(winner,f)
-
-	# show final stats
-	print('\nBest genome:\n{!s}'.format(winner))
+		for r in remLaser:
+			lasers.remove(r)
 
 
-if __name__ == '__main__':
-	local_dir = os.path.dirname(__file__)
-	config_path = os.path.join(local_dir, 'config-feedforward.txt')
-	run(config_path)
+		draw_win(win,player,enemies,score,lasers)
+
+main()
