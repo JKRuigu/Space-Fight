@@ -4,6 +4,7 @@ import time
 import random
 import math
 import neat
+import pickle
 
 pygame.font.init()
 
@@ -131,8 +132,12 @@ def main():
 				if event.key == pygame.K_LEFT or	event.key == pygame.K_RIGHT:
 					player_change = 0
 
-		
+		with open('first_model','rb') as f:
+			mp = pickle.load(f)
+		# print(mp.predict(player.x, abs(player.y - enemy.y),(player.x - enemy.x)))
+		print(mp)
 		playerX += player_change
+
 
 		# PLAYER MOVEMENT
 		if playerX <= minX:
@@ -185,47 +190,47 @@ def main():
 
 
 def main_menu():
-    title_font = pygame.font.Font('freesansbold.ttf',50)
-    run = True
-    while run:
-        screen.blit(BG, (0,0))
-        title_label = title_font.render("Press the mouse to begin...", 1, (255,255,255))
-        screen.blit(title_label, (WIDTH/2 - title_label.get_width()/2, 350))
-        pygame.display.update()
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                run = False
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                main()
-                pass
-    pygame.quit()
+	title_font = pygame.font.Font('freesansbold.ttf',50)
+	run = True
+	while run:
+		screen.blit(BG, (0,0))
+		title_label = title_font.render("Press the mouse to begin...", 1, (255,255,255))
+		screen.blit(title_label, (WIDTH/2 - title_label.get_width()/2, 350))
+		pygame.display.update()
+		for event in pygame.event.get():
+			if event.type == pygame.QUIT:
+				run = False
+			if event.type == pygame.MOUSEBUTTONDOWN:
+				main()
+				pass
+	pygame.quit()
 
 
 # main_menu()
 def run(config_file):
-    """
-    runs the NEAT algorithm to train a neural network to play flappy bird.
-    :param config_file: location of config file
-    :return: None
-    """
-    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                         config_file)
+	"""
+	runs the NEAT algorithm to train a neural network to play flappy bird.
+	:param config_file: location of config file
+	:return: None
+	"""
+	config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+						 neat.DefaultSpeciesSet, neat.DefaultStagnation,
+						 config_file)
 
-    p = neat.Population(config)
+	p = neat.Population(config)
 
-    p.add_reporter(neat.StdOutReporter(True))
-    stats = neat.StatisticsReporter()
-    p.add_reporter(stats)
+	p.add_reporter(neat.StdOutReporter(True))
+	stats = neat.StatisticsReporter()
+	p.add_reporter(stats)
 
-    winner = p.run(main_menu, 50)
+	winner = p.run(main_menu, 50)
 
-    # # show final stats
-    # print('\nBest genome:\n{!s}'.format(winner))
+	# # show final stats
+	# print('\nBest genome:\n{!s}'.format(winner))
 
 
 if __name__ == '__main__':
-    local_dir = os.path.dirname(__file__)
-    config_path = os.path.join(local_dir, 'config-feedforward.txt')
-    # run(config_path)
-    main_menu()
+	local_dir = os.path.dirname(__file__)
+	config_path = os.path.join(local_dir, 'config-feedforward.txt')
+	# run(config_path)
+	main_menu()

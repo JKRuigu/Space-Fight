@@ -157,7 +157,7 @@ def main():
     lost_font = pygame.font.SysFont("comicsans", 60)
 
     enemies = []
-    wave_length = 5
+    wave_length = 3
     enemy_vel = 1
 
     player_vel = 5
@@ -235,7 +235,7 @@ def main():
                 enemy.shoot()
 
             if collide(enemy, player):
-                player.health -= 10
+                player.health -= 2
                 enemies.remove(enemy)
             elif enemy.y + enemy.get_height() > HEIGHT:
                 lives -= 1

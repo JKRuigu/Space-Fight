@@ -1,4 +1,5 @@
-class_neat.pyimport pygame
+# class_neat.py
+import pygame
 import os
 import time
 import random
@@ -57,7 +58,7 @@ class Player():
 		return pygame.mask.from_surface(self.img)
 
 class Enemy():
-	speed = 5
+	speed = 2
 	
 	def __init__(self,x,y):
 		self.x = x
@@ -82,7 +83,7 @@ class Enemy():
 
 		return False
 
-def draw_win(win,players,enemies,score,gen):
+def draw_win(win,players,enemies,score,gen,opt):
 	win.blit(BG, (0,0))
 	score_label = font.render("Score: " + str(score),1,(255,255,255))
 	win.blit(score_label, (WIDTH - score_label.get_width() - 15, 10))
@@ -94,8 +95,12 @@ def draw_win(win,players,enemies,score,gen):
 	players_pop = font.render("Alive: " + str(len(players)),1,(255,255,255))
 	win.blit(players_pop, (10, 50))
 
+
 	for player in players:
 		player.draw(win)
+		for enemy in enemies:
+			outFont = font.render(str(abs(player.x - enemy.x))+',' +str(abs(player.y - enemy.y)),1,(255,255,255))
+			win.blit(outFont, (player.x, player.y-5))
 
 	for enemy in enemies:
 		enemy.draw(win)
@@ -104,12 +109,13 @@ def draw_win(win,players,enemies,score,gen):
 def main(genomes,config):	
 	global GEN
 	GEN += 1
-	enemies = [Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50))]
+	enemies = [Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50)),Enemy(random.randint(-10,710),random.randint(0,50))]
 	nets  =[] 
 	ge = []
 	players =[]
 	clock = pygame.time.Clock()
 	score = 0
+	opt = 0
 	
 	for g_id,g in genomes:
 		g.fitness = 0
@@ -129,7 +135,7 @@ def main(genomes,config):
 				quit()
 
 		for x,player in enumerate(players):
-			ge[x].fitness +=0.1
+			ge[x].fitness +=0.01
 			if player.x >= 0 or player.x <= 800:
 				ge[x].fitness +=0.01
 			elif player.x >= 0 or player.x >= 800:
@@ -137,13 +143,22 @@ def main(genomes,config):
 				
 			if len(enemies) >0:
 				for enemy in enemies:
-					if abs(player.y - enemy.y) > 100:
-						ge[x].fitness += 1.5
-					output = nets[players.index(player)].activate((player.x, abs(player.y - enemy.y), abs(player.x - enemy.x)))
+					if abs(player.x - enemy.x) > 100:
+						ge[x].fitness += .005
+					elif abs(player.x - enemy.x) < 10:
+						ge[x].fitness -= .5
+					output = nets[players.index(player)].activate((player.x, abs(player.y - enemy.y),(player.x - enemy.x)))
 					num = int(output[0])
+					# print(num)
 					if num == -1 or num == 1:
 						player.move(num)
+						ge[x].fitness += 2
+					elif player.x >= -5 or player.x<= 800:
 						ge[x].fitness +=.002
+					elif num == 0:
+						ge[x].fitness -=2
+					else:
+						ge[x].fitness -=.0001
 
 		add_enemy = False
 		rem = []
@@ -163,10 +178,12 @@ def main(genomes,config):
 			if enemy.y >= 400:
 					add_enemy = True
 
-		if add_enemy and len(enemies) <3:
+		if add_enemy and len(enemies) <5:
 			score+=1
 			for g in ge:
 				g.fitness += 2
+			enemies.append(Enemy(5,random.randint(0,50)))	
+			enemies.append(Enemy(random.randint(-10,710),random.randint(0,50)))	
 			enemies.append(Enemy(random.randint(-10,710),random.randint(0,50)))	
 		add_enemy = False
 			
@@ -178,12 +195,16 @@ def main(genomes,config):
 				nets.pop(players.index(player))
 				ge.pop(players.index(player))
 				players.pop(players.index(player))
+			if player.x >= -5 or player.x<= 800:
+				for g in ge:
+					g.fitness += .02
+
 		if len(players) <= 0:
 			for g in ge:
 				players.append(Player(370,480))
 		if score > 150 or len(players) <= 0:
 			break
-		draw_win(win,players,enemies,score,GEN)
+		draw_win(win,players,enemies,score,GEN,opt)
 
 def run(config_file):
 	config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
